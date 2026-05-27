@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PF Face Authentication Confirmation Form</title>
+  <style>
+    * { box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { margin: 0; padding: 0; background: #f4f7fb; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; padding: 30px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    h2 { margin-top: 0; color: #1f2937; font-size: 28px; }
+    p.subtitle { color: #6b7280; margin-bottom: 24px; }
+    .form-group { margin-bottom: 18px; }
+    label { display: block; margin-bottom: 8px; font-weight: bold; color: #374151; }
+    input[type="text"], input[type="email"], input[type="file"] {
+      width: 100%; padding: 12px; border: 1px solid #d1d5db;
+      border-radius: 10px; font-size: 14px;
+    }
+    .radio-group { display: flex; gap: 20px; margin-top: 8px; flex-wrap: wrap; }
+    .radio-group label { font-weight: normal; display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
+    .hidden { display: none; }
+    button {
+      width: 100%; background: #2563eb; color: white; border: none;
+      padding: 14px; border-radius: 10px; font-size: 16px; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #93c5fd; cursor: not-allowed; }
+    .message { margin-top: 20px; padding: 14px; border-radius: 10px; font-size: 14px; display: none; white-space: pre-line; }
+    .success   { background: #dcfce7; color: #166534; }
+    .warning   { background: #fef3c7; color: #92400e; }
+    .error-box { background: #fee2e2; color: #991b1b; }
+    .error { color: red; font-size: 13px; margin-top: 5px; }
+    .note  { font-size: 12px; color: #6b7280; margin-top: 6px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>PF Face Authentication Confirmation Form</h2>
+  <p class="subtitle">Please confirm whether you have completed your PF Face Authentication.</p>
+
+  <form id="pfForm">
+    <div class="form-group">
+      <label for="employeeEmail">Employee Email</label>
+      <input type="email" id="employeeEmail" name="employeeEmail" required />
+    </div>
+
+    <div class="form-group">
+      <label for="employeeId">Employee ID</label>
+      <input type="text" id="employeeId" name="employeeId" required />
+    </div>
+
+    <div class="form-group">
+      <label for="employeeName">Employee Name</label>
+      <input type="text" id="employeeName" name="employeeName" required />
+    </div>
+
+    <div class="form-group">
+      <label>Have you completed PF Face Authentication?</label>
+      <div class="radio-group">
+        <label><input type="radio" name="completionStatus" value="Completed" required /> Completed</label>
+        <label><input type="radio" name="completionStatus" value="Not Completed" /> Not Completed</label>
+      </div>
+      <div class="error" id="statusError"></div>
+    </div>
+
+    <div class="form-group hidden" id="pdfUploadSection">
+      <label for="FaceAuthenticationPdf">Upload Face Authentication PDF</label>
+      <input type="file" id="FaceAuthenticationPdf" name="FaceAuthenticationPdf" accept="application/pdf" />
+      <div class="note">Upload only PDF file.</div>
+      <div class="error" id="pdfError"></div>
+    </div>
+
+    <button type="submit" id="submitBtn">Submit Confirmation</button>
+  </form>
+
+  <div class="message success"   id="successCompleted"></div>
+  <div class="message warning"   id="successNotCompleted"></div>
+  <div class="message error-box" id="errorMessage"></div>
+</div>
+
+<script>
+  const pfForm              = document.getElementById("pfForm");
+  const pdfUploadSection    = document.getElementById("pdfUploadSection");
+  const pdfInput            = document.getElementById("FaceAuthenticationPdf");
+  const completedMessage    = document.getElementById("successCompleted");
+  const notCompletedMessage = document.getElementById("successNotCompleted");
+  const errorMessage        = document.getElementById("errorMessage");
+  const submitBtn           = document.getElementById("submitBtn");
+
+  // Show / hide PDF upload
+  document.querySelectorAll('input[name="completionStatus"]').forEach(radio => {
+    radio.addEventListener("change", function () {
+      if (this.value === "Completed") {
+        pdfUploadSection.classList.remove("hidden");
+        pdfInput.required = true;
+      } else {
+        pdfUploadSection.classList.add("hidden");
+        pdfInput.required = false;
+        pdfInput.value = "";
+      }
+    });
+  });
+
+  function clearMessages() {
+    completedMessage.style.display    = "none";
+    notCompletedMessage.style.display = "none";
+    errorMessage.style.display        = "none";
+    document.getElementById("statusError").textContent = "";
+    document.getElementById("pdfError").textContent    = "";
+  }
+
+  pfForm.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    clearMessages();
+
+    const selectedStatus = document.querySelector('input[name="completionStatus"]:checked');
+    if (!selectedStatus) {
+      document.getElementById("statusError").textContent = "Please select a status.";
+      return;
+    }
+
+    // Validate PDF if Completed
+    if (selectedStatus.value === "Completed" && pdfInput.files.length === 0) {
+      document.getElementById("pdfError").textContent = "Please upload the Face Authentication PDF.";
+      return;
+    }
+    if (selectedStatus.value === "Completed" && pdfInput.files[0]?.type !== "application/pdf") {
+      document.getElementById("pdfError").textContent = "Only PDF files are allowed.";
+      return;
+    }
+
+    submitBtn.disabled    = true;
+    submitBtn.textContent = "Submitting...";
+
+    try {
+      // Use FormData so the PDF file is sent as multipart (server uses multer)
+      const formData = new FormData();
+      formData.append("employeeEmail",    document.getElementById("employeeEmail").value.trim());
+      formData.append("employeeId",       document.getElementById("employeeId").value.trim());
+      formData.append("employeeName",     document.getElementById("employeeName").value.trim());
+      formData.append("completionStatus", selectedStatus.value);
+      if (selectedStatus.value === "Completed" && pdfInput.files.length > 0) {
+        formData.append("FaceAuthenticationPdf", pdfInput.files[0]);
+      }
+
+      // POST to our own Node server (same origin)
+      const response = await fetch("/submit", {
+        method: "POST",
+        body  : formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        if (selectedStatus.value === "Completed") {
+          completedMessage.textContent = "✅ Success! Your PF Authentication has been marked as Completed.\nA confirmation email has been sent to you.\nReminder emails will stop once HR verifies your upload.";
+          completedMessage.style.display = "block";
+        } else {
+          notCompletedMessage.textContent = "⚠️ Status recorded as Not Completed.\nPlease complete the authentication as soon as possible.\nA confirmation email has been sent to you.";
+          notCompletedMessage.style.display = "block";
+        }
+        pfForm.reset();
+        pdfUploadSection.classList.add("hidden");
+      } else {
+        errorMessage.textContent = "❌ " + (result.message || "Submission failed. Please try again.");
+        errorMessage.style.display = "block";
+      }
+
+    } catch (error) {
+      errorMessage.textContent = "❌ Network error: " + error.message;
+      errorMessage.style.display = "block";
+    } finally {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = "Submit Confirmation";
+    }
+  });
+</script>
+</body>
+</html>
