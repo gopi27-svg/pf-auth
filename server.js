@@ -185,7 +185,7 @@ function buildReminderEmail(name) {
               border:1px solid #eee;padding:20px;border-radius:10px;">
     <h2 style="color:#2563eb;margin-top:0;">Action Required: PF Face Authentication</h2>
     <p>Dear <b>${name}</b>,</p>
-    <p>Our records show that you have not yet confirmed your <b>PF Face Authentication</b>.</p>
+    Our records show that you have not yet Completed your <b>PF Face Authentication</b>.</p>
     <p>Please complete the process immediately. We have attached a step-by-step guide
        to this email to assist you.</p>
     <div style="background:#f8fafc;padding:15px;border-left:4px solid #2563eb;margin:20px 0;">
@@ -199,10 +199,10 @@ function buildReminderEmail(name) {
         Confirm Completion Now
       </a>
     </div>
-    <p style="color:#666;font-size:12px;border-top:1px solid #eee;padding-top:10px;">
-      <b>Note:</b> This is an automated daily reminder. These emails will stop automatically
-      once you submit the confirmation form.
-    </p>
+    <div style="background:#fff5f5;border-left:4px solid #dc2626;padding:12px 16px;margin:20px 0;border-radius:4px;">
+      <p style="margin:0;color:#dc2626;font-weight:bold;font-size:14px;">⚠️ Action Required: PF Face Authentication</p>
+      <p style="margin:8px 0 0;color:#7f1d1d;font-size:13px;">If you do not complete your PF Face Authentication before <b>8th June 2026</b>, your salary will be placed on <b>Hold</b>. Please take immediate action to avoid any inconvenience.</p>
+    </div>
     <p>Regards,<br><b>HR Department</b></p>
   </div>`;
 }
