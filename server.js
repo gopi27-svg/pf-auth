@@ -7,13 +7,14 @@ const path       = require("path");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Multer: store PDF in memory ────────────────────────────
+// ── Multer: store file in memory (PDF, JPG, PNG) ───────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits : { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === "application/pdf") cb(null, true);
-    else cb(new Error("Only PDF files are allowed"));
+    const allowed = ["application/pdf", "image/jpeg", "image/png"];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Only PDF, JPG or PNG files are allowed"));
   }
 });
 
@@ -32,12 +33,10 @@ function createTransporter() {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
     },
-    tls: {
-      ciphers           : "SSLv3",
-      rejectUnauthorized: false
-    }
+    tls: { rejectUnauthorized: false }
   });
 }
+
 
 // ============================================================
 //  ROUTE 1: Serve the form
@@ -49,11 +48,16 @@ app.get("/", (req, res) => {
 
 // ============================================================
 //  ROUTE 2: Form Submission  POST /submit
-//  Called by the HTML form
 // ============================================================
 app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => {
   try {
-    const { employeeEmail, employeeId, employeeName, completionStatus } = req.body;
+    const {
+      employeeEmail,
+      employeeId,
+      employeeName,
+      completionStatus,
+      reason
+    } = req.body;
 
     if (!employeeEmail || !employeeId || !employeeName || !completionStatus) {
       return res.status(400).json({ success: false, message: "All fields are required." });
@@ -68,8 +72,9 @@ app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => 
       employeeId,
       employeeName,
       completionStatus,
+      reason        : reason || "",
       pdfFileName,
-      pdfBase64: pdfBase64 ? `data:application/pdf;base64,${pdfBase64}` : ""
+      pdfBase64     : pdfBase64 ? `data:${req.file.mimetype};base64,${pdfBase64}` : ""
     };
 
     const GAS_URL = process.env.GAS_URL;
@@ -89,14 +94,14 @@ app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => 
       to      : employeeEmail,
       cc      : process.env.CC_EMAILS || "",
       subject : `PF Face Authentication – Submission Received – ${employeeName}`,
-      html    : buildConfirmationEmail(employeeName, completionStatus)
+      html    : buildConfirmationEmail(employeeName, completionStatus, reason)
     };
 
     if (req.file) {
       mailOptions.attachments = [{
         filename   : req.file.originalname,
         content    : req.file.buffer,
-        contentType: "application/pdf"
+        contentType: req.file.mimetype
       }];
     }
 
@@ -119,12 +124,10 @@ app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => 
 // ============================================================
 //  ROUTE 3: Send Daily Reminders  POST /send-reminders
 //  Called by Google Apps Script daily trigger
-//  Protected by REMINDER_SECRET token
 // ============================================================
 app.post("/send-reminders", async (req, res) => {
   console.log("POST /send-reminders hit");
 
-  // Auth check
   const token = req.headers["x-auth-token"];
   if (token !== process.env.REMINDER_SECRET) {
     console.log("Unauthorized - token mismatch");
@@ -152,7 +155,6 @@ app.post("/send-reminders", async (req, res) => {
         html    : buildReminderEmail(emp.name)
       };
 
-      // Attach the PDF guide if provided
       if (guideBase64 && guideFileName) {
         mailOptions.attachments = [{
           filename   : guideFileName,
@@ -179,13 +181,13 @@ app.post("/send-reminders", async (req, res) => {
 //  EMAIL TEMPLATES
 // ============================================================
 function buildReminderEmail(name) {
-  const formLink = process.env.FORM_LINK || "https://pf-face-authentication-iq06.onrender.com/";
+  const formLink = process.env.FORM_LINK || "https://pf-auth-i8w8.onrender.com/";
   return `
   <div style="font-family:Arial,sans-serif;color:#333;max-width:600px;
               border:1px solid #eee;padding:20px;border-radius:10px;">
     <h2 style="color:#2563eb;margin-top:0;">Action Required: PF Face Authentication</h2>
     <p>Dear <b>${name}</b>,</p>
-    Our records show that you have not yet Completed your <b>PF Face Authentication</b>.</p>
+    <p>Our records show that you have not yet Completed your <b>PF Face Authentication</b>.</p>
     <p>Please complete the process immediately. We have attached a step-by-step guide
        to this email to assist you.</p>
     <div style="background:#f8fafc;padding:15px;border-left:4px solid #2563eb;margin:20px 0;">
@@ -207,7 +209,7 @@ function buildReminderEmail(name) {
   </div>`;
 }
 
-function buildConfirmationEmail(name, status) {
+function buildConfirmationEmail(name, status, reason) {
   const isCompleted = status === "Completed";
   return `
   <div style="font-family:Arial,sans-serif;color:#333;max-width:600px;
@@ -220,7 +222,8 @@ function buildConfirmationEmail(name, status) {
       ? `<p>Thank you! Your PF Face Authentication status has been recorded as <b>Completed</b>.</p>
          <p>HR will verify your uploaded document. Daily reminder emails will stop once verified.</p>`
       : `<p>Your status has been recorded as <b>Not Completed</b>.</p>
-         <p>Please complete the PF Face Authentication at the earliest to avoid continued reminders.</p>`
+         ${reason ? `<p><b>Reason:</b> ${reason}</p>` : ""}
+         <p>Please complete the PF Face Authentication before <b>8th June 2026</b> to avoid your salary being placed on hold.</p>`
     }
     <p>Regards,<br><b>HR Department</b></p>
   </div>`;
