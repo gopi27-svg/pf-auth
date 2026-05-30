@@ -51,13 +51,7 @@ app.get("/", (req, res) => {
 // ============================================================
 app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => {
   try {
-    const {
-      employeeEmail,
-      employeeId,
-      employeeName,
-      completionStatus,
-      reason
-    } = req.body;
+    const { employeeEmail, employeeId, employeeName, completionStatus, reason } = req.body;
 
     if (!employeeEmail || !employeeId || !employeeName || !completionStatus) {
       return res.status(400).json({ success: false, message: "All fields are required." });
@@ -88,7 +82,6 @@ app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => 
 
     // ── Send confirmation email via Outlook SMTP ────────────
     const transporter = createTransporter();
-
     const mailOptions = {
       from    : `"HR Department" <${process.env.SMTP_USER}>`,
       to      : employeeEmail,
@@ -123,7 +116,7 @@ app.post("/submit", upload.single("FaceAuthenticationPdf"), async (req, res) => 
 
 // ============================================================
 //  ROUTE 3: Send Daily Reminders  POST /send-reminders
-//  Called by Google Apps Script daily trigger
+//  Returns both sent and failed results back to GAS
 // ============================================================
 app.post("/send-reminders", async (req, res) => {
   console.log("POST /send-reminders hit");
@@ -165,11 +158,64 @@ app.post("/send-reminders", async (req, res) => {
 
       await transporter.sendMail(mailOptions);
       console.log(`✅ Sent to: ${emp.email}`);
-      results.push({ email: emp.email, sent: true });
+      results.push({ email: emp.email, name: emp.name, sent: true, error: "" });
 
     } catch (err) {
       console.error(`❌ Failed → ${emp.email}: ${err.message}`);
-      results.push({ email: emp.email, sent: false, error: err.message });
+      results.push({ email: emp.email, name: emp.name, sent: false, error: err.message });
+    }
+  }
+
+  return res.json({ success: true, results });
+});
+
+
+// ============================================================
+//  ROUTE 4: Send Salary Hold Emails  POST /send-salary-hold
+//  Called on 9th June for Not Completed + Blank employees
+// ============================================================
+app.post("/send-salary-hold", async (req, res) => {
+  console.log("POST /send-salary-hold hit");
+
+  const token = req.headers["x-auth-token"];
+  if (token !== process.env.REMINDER_SECRET) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const { employees, guideBase64, guideFileName } = req.body;
+
+  if (!employees || !Array.isArray(employees)) {
+    return res.status(400).json({ success: false, message: "No employee data provided" });
+  }
+
+  const transporter = createTransporter();
+  const results     = [];
+
+  for (const emp of employees) {
+    try {
+      const mailOptions = {
+        from    : `"HR Department" <${process.env.SMTP_USER}>`,
+        to      : emp.email,
+        cc      : process.env.CC_EMAILS || "",
+        subject : `Salary on Hold – PF Face Authentication Incomplete – ${emp.name}`,
+        html    : buildSalaryHoldEmail(emp.name)
+      };
+
+      if (guideBase64 && guideFileName) {
+        mailOptions.attachments = [{
+          filename   : guideFileName,
+          content    : Buffer.from(guideBase64, "base64"),
+          contentType: "application/pdf"
+        }];
+      }
+
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ Salary hold sent to: ${emp.email}`);
+      results.push({ email: emp.email, name: emp.name, sent: true, error: "" });
+
+    } catch (err) {
+      console.error(`❌ Failed → ${emp.email}: ${err.message}`);
+      results.push({ email: emp.email, name: emp.name, sent: false, error: err.message });
     }
   }
 
@@ -188,8 +234,7 @@ function buildReminderEmail(name) {
     <h2 style="color:#2563eb;margin-top:0;">Action Required: PF Face Authentication</h2>
     <p>Dear <b>${name}</b>,</p>
     <p>Our records show that you have not yet Completed your <b>PF Face Authentication</b>.</p>
-    <p>Please complete the process immediately. We have attached a step-by-step guide
-       to this email to assist you.</p>
+    <p>Please complete the process immediately. We have attached a step-by-step guide to this email to assist you.</p>
     <div style="background:#f8fafc;padding:15px;border-left:4px solid #2563eb;margin:20px 0;">
       <p style="margin:0;"><b>Step 1:</b> Follow the attached PDF guide to complete authentication.</p>
       <p style="margin:10px 0 0;"><b>Step 2:</b> Click the button below to submit your confirmation.</p>
@@ -205,6 +250,49 @@ function buildReminderEmail(name) {
       <p style="margin:0;color:#dc2626;font-weight:bold;font-size:14px;">⚠️ Action Required: PF Face Authentication</p>
       <p style="margin:8px 0 0;color:#7f1d1d;font-size:13px;">If you do not complete your PF Face Authentication before <b>8th June 2026</b>, your salary will be placed on <b>Hold</b>. Please take immediate action to avoid any inconvenience.</p>
     </div>
+    <p>Regards,<br><b>HR Department</b></p>
+  </div>`;
+}
+
+function buildSalaryHoldEmail(name) {
+  const formLink = process.env.FORM_LINK || "https://pf-auth-i8w8.onrender.com/";
+  return `
+  <div style="font-family:Arial,sans-serif;color:#333;max-width:600px;
+              border:1px solid #eee;padding:20px;border-radius:10px;">
+
+    <div style="background:#fff1f2;border:2px solid #dc2626;border-radius:8px;
+                padding:16px 20px;margin-bottom:24px;text-align:center;">
+      <p style="margin:0;font-size:22px;font-weight:bold;color:#991b1b;">YOUR SALARY IS ON HOLD</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#b91c1c;">PF Face Authentication Not Completed</p>
+    </div>
+
+    <p>Dear <b>${name}</b>,</p>
+
+    <p>Despite multiple reminders sent to you over the past few weeks, your
+       <b>PF Face Authentication</b> remains incomplete. As communicated earlier,
+       failure to complete this process would result in your salary being placed on hold.</p>
+
+    <p>Effective immediately, <b style="color:#dc2626;">your salary has been placed on hold</b>
+       until you complete the PF Face Authentication process and submit your confirmation.</p>
+
+    <div style="background:#f8fafc;padding:15px;border-left:4px solid #dc2626;margin:20px 0;">
+      <p style="margin:0;font-weight:bold;">To release your salary, complete these steps immediately:</p>
+      <p style="margin:10px 0 0;"><b>Step 1:</b> Follow the attached PDF guide to complete PF Face Authentication.</p>
+      <p style="margin:10px 0 0;"><b>Step 2:</b> Click the button below to submit your confirmation.</p>
+    </div>
+
+    <div style="text-align:center;margin:30px 0;">
+      <a href="${formLink}"
+         style="background:#dc2626;color:#fff;padding:14px 28px;text-decoration:none;
+                border-radius:8px;font-weight:bold;display:inline-block;">
+        Complete Authentication Now
+      </a>
+    </div>
+
+    <p style="color:#666;font-size:12px;border-top:1px solid #eee;padding-top:10px;">
+      For any assistance, please contact HR immediately. Your salary will be released
+      as soon as your authentication is verified.
+    </p>
     <p>Regards,<br><b>HR Department</b></p>
   </div>`;
 }
